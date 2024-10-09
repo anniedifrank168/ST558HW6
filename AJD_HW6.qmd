@@ -1,0 +1,266 @@
+---
+title: "AJD_HW6"
+format: html
+editor: visual
+---
+
+### Homework 6 Annie DiFrank
+
+#### Task 1: Conceptual Questions
+
+1.  What is the purpose of the lapply() function? What is the equivalent purrr function?
+
+    > To quickly/efficiently apply a function to elements of a list.
+
+2.  Suppose we have a list called my_list. Each element of the list is a numeric data frame (all columns are numeric). We want use lapply() to run the code cor(numeric_matrix, method = "kendall") on each element of the list. Write code to do this below! (I'm really trying to ask you how you specify method = "kendall" when calling lapply())
+
+    > lapply(x=my_list, FUN=cor, method="kendall")
+
+3.  What are two advantages of using purrr functions instead of the BaseR apply family?
+
+    > Purrr gives a more clean and consistent way to apply functions to objects and have a lot of additional helper functions available.
+
+4.  What is a side-effect function?
+
+    > Side-effect functions are pipeable functions that do not transform the data, they just produce something/change the state of something (like printing a data frame into the consol or reading in data from a .csv file into an R object)
+
+5.  Why can you name a variable sd in a function and not cause any issues with the sd function?
+
+    > Because within the function is a separate environment than where the sd function is stored (global environment); when you call a function, it creates a temporary environment that is not stored after the function is done running.
+
+#### Task 2: Writing R Functions Part 1
+
+Here we will first write a basic function called getRMSE() that takes in a vector of responses and a vector of predictions and outputs the RMSE. Then, we will test the function.
+
+```{r}
+
+getRMSE <- function(response_vector,predict_vector,...) {
+  #Do the squared differences 
+  temp <- (response_vector - predict_vector)^2
+  
+  #calculate the mean of the squared differences 
+  mean_temp <- mean(temp, ... )
+  
+  #calculate RMSE by taking sqrroot of the mean_temp
+  rmse_value <- sqrt(mean_temp)
+  
+  return(paste0("RMSE = ",rmse_value))
+}
+
+#Creating response and prediction values 
+set.seed(10)
+n <- 100
+x <- runif(n)
+resp <- 3 + 10 * x + rnorm(n)
+pred <- predict(lm(resp ~ x), data.frame(x))
+
+#Testing function 
+getRMSE(resp,pred,na.rm = TRUE)
+
+#Repeat after replacing two of the response values with mising values 
+#resp
+resp[6] <- NA
+resp[36] <-NA
+
+#Testing with specifying the behavior to deal with missing values 
+getRMSE(resp,pred,na.rm = TRUE)
+
+#Testing without specifying the behavior to deal with missing values 
+getRMSE(resp,pred)
+  #Must specify the behavior! 
+```
+
+#### Task 2: Writing R Functions Part 2
+
+Here, we will write a function called getMAE() that follows the same specifications as above to get the MAE and test it.
+
+```{r}
+getMAE <- function(response_vector,predict_vector,...) {
+  #Do the abs. val. of the differences 
+  temp <- abs((response_vector - predict_vector))
+  
+  #calculate the mean of the abs val 
+  mae_value <- mean(temp, ... )
+  
+  return(paste0("MAE = ",mae_value))
+}
+
+#Creating response and prediction values 
+set.seed(10)
+n <- 100
+x <- runif(n)
+resp <- 3 + 10 * x + rnorm(n)
+pred <- predict(lm(resp ~ x), data.frame(x))
+
+#Testing function 
+getMAE(resp,pred,na.rm=TRUE)
+
+#Repeat after replacing two of the response values with mising values 
+#resp
+resp[6] <- NA
+resp[36] <-NA
+
+#Testing with specifying the behavior to deal with missing values 
+getMAE(resp,pred,na.rm = TRUE)
+
+#Testing without specifying the behavior to deal with missing values 
+getMAE(resp,pred)
+  #Must specify the behavior! 
+
+```
+
+#### Task 2 Writing R Functions Part 3
+
+Here we will write a wrapper function that can be used to get either or both metrics returned with a single function call. The function iwll check that the two vectors passed are numeric, if not a message will print and the function will exit. It will return both metrics by default and include names.
+
+```{r}
+getRMSE_MAE <-
+  function(response_vector,
+           predict_vector,
+           metric = c("both", "RMSE", "MAE"),
+           ...) {
+    #Checking vectors are numeric
+    if (!is.numeric(response_vector) || !is.numeric(predict_vector)) {
+      stop("STOP: input vectors must be numeric")
+    }
+    
+    rmse_value <- getRMSE(response_vector, predict_vector, ...)
+    
+    mae_value <- getMAE(response_vector, predict_vector, ...)
+    
+    #Return based on the chosen metric
+    if (metric == "both") {
+      return(list(RMSE = rmse_value, MAE = mae_value))
+    } else if (metric == "RMSE") {
+      return(rmse_value)
+    } else {
+      return(mae_value)
+    }
+  }
+
+#Creating vectors to test
+set.seed(10)
+n <- 100
+x <- runif(n)
+resp <- 3 + 10 * x + rnorm(n)
+pred <- predict(lm(resp ~ x), data.frame(x))
+
+#Testing function while calling each metric individually
+getRMSE_MAE(resp, pred, "RMSE", na.rm = TRUE)
+getRMSE_MAE(resp, pred, "MAE", na.rm = TRUE)
+#Testing while calling both metrics
+getRMSE_MAE(resp, pred, "both", na.rm = TRUE)
+
+#Repeating with replacing two of the response values with missing values
+#resp
+resp[6] <- NA
+resp[36] <- NA
+
+getRMSE_MAE(resp, pred, "RMSE", na.rm = TRUE)
+getRMSE_MAE(resp, pred, "MAE", na.rm = TRUE)
+getRMSE_MAE(resp, pred, "both", na.rm = TRUE)
+
+#Testing while passing it incorrect data
+#char_vec = c("A", "B", "C")
+#getRMSE_MAE(resp, char_vec, "both")
+#my error message displayed because one of the vectors isn't numeric! I commented this out because even though I set error = TRUE in the chunk options it doesn't want to render with this error running. 
+
+```
+
+#### Task 3: Querying an API and a Tidy-Style Function
+
+Here, we will connect to the news API and return information about an interesting topic.
+
+```{r}
+library(httr)
+library(jsonlite)
+library(tidyr)
+library(dplyr)
+library(purrr)
+library(lubridate)
+
+#1. Grabbing information about the recent top headlines
+top_headlines <-
+  GET(
+    "https://newsapi.org/v2/top-headlines?country=us&apiKey=1934ad1d9d784a7f9e6da0472528e364"
+  )
+
+str(top_headlines, max.level = 1)
+#2. parsing content
+parsed_TH <- fromJSON(rawToChar(top_headlines$content))
+parsed_TH #articles is the element we want for the data
+topheads <- as_tibble(pluck(parsed_TH, "articles"))
+
+#3. Writing a quick function to easily query this API; inputs are whether you want everything or just top headlines, the title/subject to search for (string),a time period to search from (string- youll search from that time until present), and an API key
+getAPI <-
+  function(headlines = c("top-headlines?country=us", "everything?"),
+           title = NULL,
+           time = NULL,
+           APIkey) {
+    beginningURL <- "https://newsapi.org/v2/"
+  
+    #USER NOTES:
+    # must include q= in 'title' argument, followed by &
+    #must include total time string (format: from=STARTDATE&to=ENDDATE)
+    
+    url <- paste0(beginningURL, headlines, title, time, "&apiKey=", APIkey)
+    
+    temp <- GET(url)
+    parsed <- fromJSON(rawToChar(temp$content))
+    data <- as_tibble(pluck(parsed, "articles"))
+    return(data)
+  }
+
+#Using function to grab my data from above
+getAPI(headlines = "top-headlines?country=us", APIkey = "1934ad1d9d784a7f9e6da0472528e364") -> topheads
+
+#Using function to grab data on Apple/ using all of the options of my function
+getAPI(
+  headlines = "everything?",
+  title = "q=apple&",
+  time = "from=2024-10-08&to=2024-10-08",
+  APIkey = "1934ad1d9d784a7f9e6da0472528e364"
+) -> appledata
+
+#4. Summaring name source via a contingency table
+table(appledata$source$name)
+
+#5. turning the publishedAt column into a date column using the lubridate package, sorting the two data frames each by their new parsed date column, and creating a new variable called pub_diff that is the difference in time between the articles' published dates. saving the mods as new dataframes.
+
+#Creating data columns, sorting by them
+timed_apple <-
+  appledata %>% mutate(date = ymd_hms(publishedAt)) %>% arrange(., date) %>% select(date, everything())
+timed_topheadlines <-
+  topheads %>% mutate(date = ymd_hms(publishedAt)) %>% arrange(., date) %>% select(date, everything())
+
+  #Creating pub_diff
+timed_apple <-
+  timed_apple %>% mutate(pub_diff = date - lag(date)) %>% select(date, pub_diff, everything())
+timed_topheadlines <-
+  timed_topheadlines %>% mutate(pub_diff = date - lag(date)) %>% select(date, pub_diff, everything())
+
+#6. Subsetting and calling map() with a custom anonymous function
+
+  #apple data
+timed_apple_subset <- timed_apple %>% select(date, pub_diff)
+
+TAS_summary <- map(timed_apple_subset, \(x) list(
+  mean = mean(x, na.rm = TRUE),
+  sd = sd(x, na.rm = TRUE),
+          median = median(x, na.rm = TRUE)
+))
+
+TAS_summary
+
+  #top headlines data
+timed_topheads_subset <- timed_topheadlines %>% select(date, pub_diff)
+
+TTS_summary <- map(timed_topheads_subset, \(x) list(
+  mean = mean(x, na.rm = TRUE),
+  sd = sd(x, na.rm = TRUE),
+          median = median(x, na.rm = TRUE)
+))
+
+TTS_summary
+
+```
